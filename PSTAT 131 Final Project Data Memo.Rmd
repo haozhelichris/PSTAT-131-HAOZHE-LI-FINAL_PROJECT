@@ -1,0 +1,80 @@
+---
+title: "PSTAT 131 Final Project Data Memo"
+author: "Haozhe Li"
+date: "2022-10-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+- An overview of your dataset
+What does it include?
+
+Cars dataset with features including make, model, year, engine, and other properties of the car used to predict its price.
+
+Where and how will you be obtaining it? Include the link and source.
+
+Find it on kagggle by searching "car"
+https://www.kaggle.com/datasets/CooperUnion/cardataset/discussion?datasetId=575
+
+About how many observations? How many predictors?
+
+11915 observations and 15 predictors
+
+What types of variables will you be working with?
+
+Both characters and numerical variable
+
+Is there any missing data? About how much? Do you have an idea for how to handle it?
+
+There is missing data. 3 in the engine fuel type 69 in engine hp 30 in engine cylinders 6 in number of doors. I think I'll first double check if I can fill the data by checking the database if I cant fill in the data I'll delete the missing data
+
+- An overview of your research question(s)
+What variable(s) are you interested in predicting? What question(s) are you interested in answering?
+
+I think I'm going to use make, year, engine hp, cylinder, transmission type, driven wheel, number of doors, market category, vehicle size, vehicle style, highway MPG, city MPG, and MSRP
+
+The question im interested in answering is what is the category is going to influence the MSRP the most the and which category have the least influence on the MSRP
+
+Name your response/outcome variable(s) and briefly describe it/them.
+
+The response variable is MSRP which is the market price of the car
+
+Will these questions be best answered with a classification or regression approach?
+
+I think it is best answered with a regression approach
+
+Which predictors do you think will be especially useful?
+
+I think the male year cylinder and market category will be especially useful
+
+Is the goal of your model descriptive, predictive, inferential, or a combination? Explain.
+
+I think it is more like mix since we are goin g predictive since the aim to predict the msrp with minimum reducible error
+And we should also use the descriptive since we need to visually emphasize the trend of the data
+
+- Your proposed project timeline
+
+When do you plan on having your data set loaded, beginning your exploratory data analysis, etc?
+
+Provide a general timeline for the rest of the quarter.
+
+Loaded the data at week 2
+Beginning set the model week 3
+Research the relationship week 4-6
+Visualize the data week week 6-8
+Write the final report week 8-10
+
+
+- Any questions or concerns
+
+Are there any problems or difficult aspects of the project you anticipate?
+
+I think the hard part is to try to fit the data in the model and what model should I use and possibly how to visualize the daya
+
+Any specific questions you have for me/the instructional team?
+
+Not for now
+
