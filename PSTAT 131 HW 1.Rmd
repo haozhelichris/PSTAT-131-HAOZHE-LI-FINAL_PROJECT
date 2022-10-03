@@ -9,6 +9,58 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Question 1:
+Define supervised and unsupervised learning. What are the difference(s) between them?
+Supervised learning is learning with supervisor but unsupervised is learning without supervisor.
+(Lecture note)
+In supervised leaning for each observation of the predictor measurement xi, i=1,….,n there is an associated response measurement yi, but in the unsupervised learning for every observation i = 1,…,n we oberve a vector of measurement xi but no associated response yi. In supervised learning, we wish to fit a model that relates the response to the predictors, with the aim of accurately predicting the response for future observations (prediction) or better understanding the relationship between the response and the predictors (inference) and we try to fit the model in to the model like linear regression or logistic regression etc. However, in supervised learning it can’t fit to a linear model since there is no response to predict. (Book #26)
+
+Question 2:
+Explain the difference between a regression model and a classification model, specifically in the context of machine learning.
+In regression model Y is quantitative and it is about numerical values. In classification model Y is qualitative and its categorical values. (Lecture note)
+
+Question 3:
+Name two commonly used metrics for regression ML problems. Name two commonly used metrics for classification ML problems.(Lecture note)
+Regression: Mean Squared Error (MSE) Root Mean Squared Error (RMSE) (Lecture note)
+Classification: Confusion matrix, log-loss, Accuracy
+
+Question 4:
+As discussed, statistical models can be used for different purposes. These purposes can generally be classified into the following three categories. Provide a brief description of each.
+•	Descriptive models:
+•	Inferential models:
+•	Predictive models:
+Descriptive models:
+Aim is to predict Y with minimum reducible error and it’s not focused on hypothesis tests
+
+Inferential models:
+Aim to test theories and its possibly causal claims. Also it state the relationship between outcome and predictors
+
+Predictive models:
+It choose model to best visually to emphasize a trend in data
+(Lecture note)
+
+Question 5:
+Predictive models are frequently used in machine learning, and they can usually be described as either mechanistic or empirically-driven. Answer the following questions.
+•	Define mechanistic. Define empirically-driven. How do these model types differ? How are they similar?
+•	In general, is a mechanistic or empirically-driven model easier to understand? Explain your choice.
+•	Describe how the bias-variance tradeoff is related to the use of mechanistic or empirically-driven models.
+In mechanistic model we assume a parametric form for f and we won’t match true unknown f and we can add parameters to make it more flexibility
+In empirically driven model we don’t have assumptions about f and we require a larger number of observations and its much more flexible by default
+They all have problems of over fitting
+It is easier to understand the mechanistic since we have the assumption but in empirically so we can relate the data we get with the environment
+The high bias low variance is related to the mechanistic and the empirically driven models is related to the low bias variance trade off
+(Lecture note)
+
+Question 6:
+A political candidate’s campaign has collected some detailed voter history data from their constituents. The campaign is interested in two questions:
+•	Given a voter’s profile/data, how likely is it that they will vote in favor of the candidate?
+•	How would a voter’s likelihood of support for the candidate change if they had personal contact with the candidate?
+Classify each question as either predictive or inferential. Explain your reasoning for each.
+
+The first question is predictive since we are aimed to predict the outcome of the vote in favor of the candidate with minimum reducible error and we are not focused on hypothesis tests
+The second question is inferential since we are aimed to test theories like whether the voters will vote for the candidate if they had personal contact with the candidate and we are trying to state the relationship between outcome and predictor so its inferential.
+(Lecture note)
+
 Exercise 1:
 
 We are interested in highway miles per gallon, or the hwy variable. Create a histogram of this variable. Describe what you see/learn.
