@@ -2,10 +2,11 @@
 title: "Final Porject"
 author: "Haozhe Li"
 date: "2022-11-07"
-output: 
-  html_document:
-    code_folding: show
-
+output:
+    html_document:
+      toc: true
+      toc_float: true
+      code_folding: show
 ---
 
 
@@ -38,7 +39,7 @@ MSRP: The market price of the cars
 
 # Why might this model be useful?
 
-People are selling and buying the cars during the Covid which means having a model that can show the market price ofthe cars would be nice for people to have a overview when they try to sell or buy the cars. Also as a fan of cars, it is quite interesting to see the which element of the cars will influence the final price of the car.
+People are selling and buying the cars during the Covid which means having a model that can show the market price of the cars would be nice for people to have a overview when they try to sell or buy the cars. Also as a fan of cars, it is quite interesting to see the which element of the cars will influence the final price of the car.
 
 
 ## Loading Data, Packages, and Exploring Raw Data
@@ -420,7 +421,7 @@ ggplot(cars2, aes(reorder(make, msrp), msrp)) +
 ```
 
 
-Most of the msrp falls below 500000, most of the car have the mean lower than 250000 while some luxury brand like Rolls Royce is way hihger than 250000.
+Most of the msrp falls below 500000, most of the car have the mean lower than 250000 while some luxury brand like Rolls Royce is way higher than 250000.
 There are some "outlier" like Bugatti since the price is way higher than  1500000
 
 
