@@ -1,0 +1,1398 @@
+---
+title: "Final Porject"
+author: "Haozhe Li"
+date: "2022-11-07"
+output: 
+  html_document:
+    code_folding: show
+
+---
+
+
+# Introduction 
+
+The purpose of this project is to generate machine learning models that will predict the MSRP (market price) of the car in different brand with different features. 
+The database is located on Kagggle by searching “car”
+The link to this database is:
+https://www.kaggle.com/datasets/CooperUnion/cardataset/discussion?datasetId=575
+
+
+# What is included in this data base?
+
+Make: The manufactures of the car company
+Year: The year of that the cars being made
+Engine.Fuel.Type: The type of the fuel the cars are using
+Engine.HP: The horsepower of the car
+Engine.Cylinders: The number of the Cylinders of the car have
+Transmission.Type: The transmission type of the cars like manual etc
+Driven_Wheels: The type of the driven wheel the car has like front wheel drive etc
+Number.of.Doors: The number of doors the car have
+Market.Category: The kind of the class the car is like luxury, performance etc
+Vehicle.Size: The size of the car like compact
+Vehicle.Style: The style of the car like sedan
+highway.MPG: The mile per gallon in the highway
+city.mpg: The mile per gallon in the city
+Popularity: The rated popularity of the car people rated
+MSRP: The market price of the cars
+
+
+# Why might this model be useful?
+
+People are selling and buying the cars during the Covid which means having a model that can show the market price ofthe cars would be nice for people to have a overview when they try to sell or buy the cars. Also as a fan of cars, it is quite interesting to see the which element of the cars will influence the final price of the car.
+
+
+## Loading Data, Packages, and Exploring Raw Data
+
+The chunk is to turn off the warning or the message in the code chunks that the way the whole document wouldn't with the library() and the printed messages (review from the feedback)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#adjust the size
+knitr::opts_chunk$set(fig.width=7)
+knitr::opts_chunk$set(fig.height=7)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+
+## Loading Packages and Setting Up the Environment
+
+```{r}
+library(corrplot)  # for the correlation plot
+library(discrim)  # for linear discriminant analysis
+library(corrr)   # for calculating correlation
+library(knitr)   # to help with the knitting process
+library(MASS)    # to assist with the markdown processes
+library(tidyverse)   # using tidyverse and tidymodels for this project mostly
+library(tidymodels)
+library(ggplot2)   # for most of our visualizations
+library(ggrepel)
+library(stringr)    # for matching strings
+library(dplyr)     # for basic r functions
+library(yardstick) # for measuring certain metrics
+library(janitor)     # for cleaning out our data
+library(glmnet)
+library(rpart)
+library(kknn)
+tidymodels_prefer()
+```
+
+
+## Data Cleaning
+While the data set that was downloaded was tidy, a few different cleaning steps were necessary before the split occurred:
+
+### Clean names
+The name from the original data set is not that optimal for the project. So lets change it with the clean_names function
+
+```{r}
+cars <- read.csv("/Users/lhz/Desktop/---/PSTAT_131_Final_Project/car_data.csv")
+attach(cars)
+cars1 <- clean_names(cars)
+```
+
+```{r}
+dim(cars1) # getting the dimensions of our data 
+```
+
+
+There are 11914 observations and exactly 16 variables; that is a relatively big dataset. We obviously are not going to need to use all of these predictor variables since some of them are not as useful us we would expect
+
+
+# Morphing The Data
+
+
+## Remove the data that are empty in the data set
+cars2 is for later plot use
+
+```{r}
+cars1 <- na.omit(cars1)
+cars2 <- na.omit(cars1)
+```
+
+
+Remove the data that are unknown since they are not not helpful to predict the MSRP
+
+```{r}
+cars1 <- cars1 %>% 
+  filter(
+    #filter out unknown data in transmission since it is useless for the data
+    !str_detect(cars1$transmission_type, "UNKNOWN")
+    )
+cars2 <- cars1
+```
+
+
+A quick demonstration of scatter plot between the MSRP and other numerical data to check which one of the numerical data is the helpful to the model
+
+```{r}
+cars1 %>% 
+  ggplot(aes(x = msrp, y = year)) +
+  geom_point()
+cars1 %>% 
+  ggplot(aes(x = msrp, y = engine_hp)) +
+  geom_point()
+cars1 %>% 
+  ggplot(aes(x = msrp, y = engine_cylinders)) +
+  geom_point()
+cars1 %>% 
+  ggplot(aes(x = msrp, y = number_of_doors)) +
+  geom_point()
+cars1 %>% 
+  ggplot(aes(x = msrp, y = highway_mpg)) +
+  geom_point()
+cars1 %>% 
+  ggplot(aes(x = msrp, y = city_mpg)) +
+  geom_point()
+cars1 %>% 
+  ggplot(aes(x = msrp, y = popularity)) +
+  geom_point()
+```
+
+
+We can see from the graph that the more the cylinders the more the msrp will be
+The newer the year is the more the msrp will be
+The more the horse power the more the msrp will be
+The more the engine cylinders the more the msrp will be
+The number of door doesn't really suggest a clear relation with the msrp but the distribution is quite scattered
+The city_mpg, highway_mpg, or popularity doesn't suggest a clear relation with msrp
+So we will use the variable year, horse power, engine cylinders, and the number of door
+
+
+## Deselect unimportant variables
+
+The engine fuel type is hard to distinguish since some said it is recommended while some said it is required which is kind of vague to turn that into a factor in the model.
+
+City_mpg, highway_mpg is also related to the fuel which we also delete from the data set and also from the scattered plot we would deselect it since they don't suggest a clear trend.
+
+The vehicle style is a more specific version of vehicle size so we just use the vehicle_style instead.
+
+The popularity is another vague variable and some cars that have totally different features have the same popularity which means it is not a really a reliable factor.
+
+```{r}
+cars1 <- cars1 %>% 
+    # get rid of the original highway_mpg and city_mpg since they are not important
+  select(-city_mpg,-highway_mpg,-engine_fuel_type,-vehicle_size, -popularity)
+cars2 <- cars1
+```
+
+
+Change market_category column into multiple logical variables by type.
+
+```{r}
+cars1$market_category_Crossover <- str_detect(cars1$market_category, "Crossover")
+cars1$market_category_Exotic <- str_detect(cars1$market_category, "Exotic")
+cars1$market_category_Diesel <- str_detect(cars1$market_category, "Diesel")
+cars1$market_category_Luxury <- str_detect(cars1$market_category, "Luxury")
+cars1$market_category_Factory_Tuner <- str_detect(cars1$market_category, "Factory Tuner")
+cars1$market_category_High_Performance <- str_detect(cars1$market_category, "High-Performance")
+cars1$market_category_Performance <- str_detect(cars1$market_category, "Performance")
+cars1$market_category_Flex_Fuel <- str_detect(cars1$market_category, "Flex Fuel")
+cars1$market_category_Hatchback <- str_detect(cars1$market_category, "Hatchback")
+cars1$market_category_Hybrid <- str_detect(cars1$market_category, "Hybrid")
+cars1 <- cars1 %>% 
+    # get rid of the original market_category function
+  select(-market_category)
+```
+
+
+Change driven_wheels column into multiple logical variables by type.
+
+```{r}
+cars1$driven_wheels_AWD <- str_detect(cars1$driven_wheels, "all wheel drive")
+cars1$driven_wheels_FWD <- str_detect(cars1$driven_wheels, "front wheel drive")
+cars1$driven_wheels_RWD <- str_detect(cars1$driven_wheels, "rear wheel drive")
+cars1$driven_wheels_FoWD <- str_detect(cars1$driven_wheels, "four wheel drive")
+cars1 <- cars1 %>% 
+    # get rid of the original driven_wheels function
+  select(-driven_wheels)
+```
+
+
+Change transmission_type column into multiple logical variables by type.
+
+```{r}
+cars1$Transmission_Automated_Manual <- str_detect(cars1$transmission_type, "AUTOMATED_MANUAL")
+cars1$Transmission_Automatic <- str_detect(cars1$transmission_type, "AUTOMATIC")
+cars1$Transmission_Direct_Drive <- str_detect(cars1$transmission_type, "DIRECT_DRIVE")
+cars1$Transmission_Manual <- str_detect(cars1$transmission_type, "MANUAL")
+cars1 <- cars1 %>% 
+    # get rid of the original transmission_type function
+  select(-transmission_type)
+```
+
+
+Change vehicle_style column into multiple logical variables by type.
+
+```{r}
+cars1$vehicle_style_Coupe <- str_detect(cars1$vehicle_style, "Coupe")
+cars1$vehicle_style_Convertible <- str_detect(cars1$vehicle_style, "Convertible")
+cars1$vehicle_style_Sedan <- str_detect(cars1$vehicle_style, "Sedan")
+cars1$vehicle_style_Wagon <- str_detect(cars1$vehicle_style, "Wagon")
+cars1$vehicle_style_4dr_Hatchback <- str_detect(cars1$vehicle_style, "4dr Hatchback")
+cars1$vehicle_style_2dr_Hatchback <- str_detect(cars1$vehicle_style, "2dr Hatchback")
+cars1$vehicle_style_2dr_SUV <- str_detect(cars1$vehicle_style, "2dr SUV")
+cars1$vehicle_style_4dr_SUV <- str_detect(cars1$vehicle_style, "4dr SUV")
+cars1$vehicle_style_Cargo_Minivan <- str_detect(cars1$vehicle_style, "Cargo Minivan")
+cars1$vehicle_style_Cargo_Van <- str_detect(cars1$vehicle_style, "Cargo Van")
+cars1$vehicle_style_Convertible_SUV <- str_detect(cars1$vehicle_style, "Convertible SUV")
+cars1$vehicle_style_Crew_Cab_Pickup <- str_detect(cars1$vehicle_style, "Crew Cab Pickup")
+cars1$vehicle_style_Extended_Cab_Pickup <- str_detect(cars1$vehicle_style, "Extended Cab Pickup")
+cars1$vehicle_style_Passenger_Minivan <- str_detect(cars1$vehicle_style, "Passenger Minivan")
+cars1$vehicle_style_Passenger_Van <- str_detect(cars1$vehicle_style, "Passenger Van")
+cars1$vehicle_style_Regular_Cab_Pickup <- str_detect(cars1$vehicle_style, "Regular Cab Pickup")
+cars1 <- cars1 %>% 
+    # get rid of the original vehicle_style function
+  select(-vehicle_style)
+```
+
+
+Turn logical variable into categorical variables and set them as a factor
+
+```{r}
+cars1 <- cars1 %>% 
+mutate(
+  make = factor(make),
+  model = factor(model),
+  market_category_Crossover = factor(market_category_Crossover),
+  market_category_Exotic = factor(market_category_Exotic),
+  market_category_Diesel = factor(market_category_Diesel),
+  market_category_Luxury = factor(market_category_Luxury),
+  market_category_Factory_Tuner = factor(market_category_Factory_Tuner),
+  market_category_High_Performance = factor(market_category_High_Performance),
+  market_category_Performance = factor(market_category_Performance),
+  market_category_Flex_Fuel = factor(market_category_Flex_Fuel),
+  market_category_Hatchback = factor(market_category_Hatchback),
+  market_category_Hybrid = factor(market_category_Hybrid),
+  driven_wheels_AWD = factor(driven_wheels_AWD),
+  driven_wheels_FWD = factor(driven_wheels_FWD),
+  driven_wheels_RWD = factor(driven_wheels_RWD),
+  driven_wheels_FoWD = factor(driven_wheels_FoWD),
+  Transmission_Automated_Manual = factor(Transmission_Automated_Manual),
+  Transmission_Automatic = factor(Transmission_Automatic),
+  Transmission_Direct_Drive = factor(Transmission_Direct_Drive),
+  Transmission_Manual = factor(Transmission_Manual),
+  vehicle_style_Coupe = factor(vehicle_style_Coupe),
+  vehicle_style_Convertible = factor(vehicle_style_Convertible),
+  vehicle_style_Sedan = factor(vehicle_style_Sedan),
+  vehicle_style_Wagon = factor(vehicle_style_Wagon),
+  vehicle_style_4dr_Hatchback = factor(vehicle_style_4dr_Hatchback),
+  vehicle_style_2dr_Hatchback = factor(vehicle_style_2dr_Hatchback),
+  vehicle_style_2dr_SUV = factor(vehicle_style_2dr_SUV),
+  vehicle_style_4dr_SUV = factor(vehicle_style_4dr_SUV),
+  vehicle_style_Cargo_Minivan = factor(vehicle_style_Cargo_Minivan),
+  vehicle_style_Cargo_Van = factor(vehicle_style_Cargo_Van),
+  vehicle_style_Convertible_SUV = factor(vehicle_style_Convertible_SUV),
+  vehicle_style_Crew_Cab_Pickup = factor(vehicle_style_Crew_Cab_Pickup),
+  vehicle_style_Extended_Cab_Pickup = factor(vehicle_style_Extended_Cab_Pickup),
+  vehicle_style_Passenger_Minivan = factor(vehicle_style_Passenger_Minivan),
+  vehicle_style_Passenger_Van = factor(vehicle_style_Passenger_Van),
+  vehicle_style_Regular_Cab_Pickup = factor(vehicle_style_Regular_Cab_Pickup)
+)
+
+```
+
+
+Filter the data by brand for the EDA
+
+```{r}
+Acura <-cars[cars$Make=='Acura',]
+Alfa <-cars[cars$Make=='Alfa Romeo',]
+Aston <- cars[cars$Make=='Aston Martin',]
+Audi <- cars[cars$Make=='Audi',]
+Bentley <- cars[cars$Make=='Bentley',]
+BMW <- cars[cars$Make=='BMW',]
+Bugatti <- cars[cars$Make=='Bugatti',]
+Buick <- cars[cars$Make=='Buick',]
+Cadillac <- cars[cars$Make=='Cadillac',]
+Chevrolet <- cars[cars$Make=='Chevrolet',]
+Chrysler <- cars[cars$Make=='Chrysler',]
+Dodge <- cars[cars$Make=='Dodge',]
+Ferrari <- cars[cars$Make=='Ferrari',]
+FIAT <- cars[cars$Make=='FIAT',]
+Ford <- cars[cars$Make=='Ford',]
+Genesis <- cars[cars$Make=='Genesis',]
+GMC <- cars[cars$Make=='GMC',]
+Honda <- cars[cars$Make=='Honda',]
+HUMMER <- cars[cars$Make=='HUMMER',]
+Hyundai <- cars[cars$Make=='Hyundai',]
+Infiniti <- cars[cars$Make=='Infiniti',]
+Kia <- cars[cars$Make=='Kia',]
+Lamborghini <- cars[cars$Make=='Lamborghini',]
+LandRover<- cars[cars$Make=='Land Rover',]
+Lexus<- cars[cars$Make=='Lexus',]
+Lincoln<- cars[cars$Make=='Lincoln',]
+Lotus<- cars[cars$Make=='Lotus',]
+Maserati<- cars[cars$Make=='Maserati',]
+Maybach<- cars[cars$Make=='Maybach',]
+Mazda<- cars[cars$Make=='Mazda',]
+McLaren<- cars[cars$Make=='McLaren',]
+Benz<- cars[cars$Make=='Mercedes-Benz',]
+Mitsubishi<- cars[cars$Make=='Mitsubishi',]
+Nissan<- cars[cars$Make=='Nissan',]
+Oldsmobile<- cars[cars$Make=='Oldsmobile',]
+Plymouth<- cars[cars$Make=='Plymouth',]
+Pontiac<- cars[cars$Make=='Pontiac',]
+Porsche<- cars[cars$Make=='Porsche',]
+Rolls<- cars[cars$Make=='Rolls-Royce',]
+Saab<- cars[cars$Make=='Saab',]
+Scion<- cars[cars$Make=='Scion',]
+Spyker<- cars[cars$Make=='Spyker',]
+Subaru<- cars[cars$Make=='Subaru',]
+Suzuki<- cars[cars$Make=='Suzuki',]
+Tesla<- cars[cars$Make=='Tesla',]
+Toyota<- cars[cars$Make=='Toyota',]
+Volkswagen<- cars[cars$Make=='Volkswagen',]
+Volvo<- cars[cars$Make=='Volvo',]
+```
+
+
+## Exploratory Data Analysis
+
+This entire exploratory data analysis will be based only on the whole data set without the empty data, which has 11,796 observations. 
+
+# Lets start by exploring the numerical data within the data set
+
+## Variable Correlation Plot
+
+First, let’s do a correlation heat map of the numeric variables to get an idea of their relationship.
+
+```{r}
+view(cars1)
+cars1 %>% 
+  select(is.numeric) %>% 
+  cor() %>% 
+  corrplot(method = 'color', type = "lower", diag = FALSE)
+```
+
+
+We can see from the graph that there are correlation with every other elements since we mainly focus on the relation between each factor and msrp
+
+So msrp have the positive relation with year, engine_hp, engine_cylinders but have the negative relation with number of doors
+
+# Then lets explore the non numeric variable within the data set
+
+## Make
+
+Let’s begin by the checking how many different brand they have within the data set.
+
+A bar plot of manufacturer. The manufacturers are on the y-axis. Order the bars by height. 
+From the graph we can see that Chevrolet have the most second hand car while Spyker have the least cars
+
+```{r}
+cars1 %>% 
+  ggplot(aes(x = forcats::fct_infreq(make))) +
+  geom_bar() +
+  coord_flip() +
+  labs(
+    title = "Brand of the cars with the amount of the cars the data set contians",
+    x = "Car Brand"
+  )
+```
+
+
+It makes sense that the data set shows that there are more second hand car like Chevrolet and Ford since they are more affordable and less second hand car like McLaren since they are expensive or Spyker since they no longer produce it anymore.
+
+
+Let's make Bar Plots about the MSRP of the cars in general first
+
+```{r}
+ggplot(cars, aes(MSRP)) +
+  geom_histogram(bins = 70, color = "white") +
+  labs(
+    title = "Histogram of Market Price"
+  )
+```
+
+
+It makes sense that the data set shows that there is a large group of cars that have the MSRP that are lower than 250000 and rarely a large group of cars that can reach the MSRP over 500000
+
+
+Lets explore the means and other elements of the cars by plot a box plot 
+The MSRP of cars by brand
+
+```{r}
+ggplot(cars2, aes(reorder(make, msrp), msrp)) +
+  geom_boxplot(varwidth = TRUE) + 
+  coord_flip() +
+  labs(
+    title = "MSRP of the Car by the brand",
+    x = "Car Brand"
+  )
+```
+
+
+Most of the msrp falls below 500000, most of the car have the mean lower than 250000 while some luxury brand like Rolls Royce is way hihger than 250000.
+There are some "outlier" like Bugatti since the price is way higher than  1500000
+
+
+The Bar Plots about the MSRP of TOP 3 expensive and also the LAST 3 Cheapest cars
+
+```{r}
+ggplot(Bugatti, aes(MSRP)) +
+  geom_histogram(bins = 30, color = "white") +
+  facet_wrap(~Make, scales = "free_y") +
+  labs(
+    title = "Histogram of Market Price (MSRP) of Bugatti"
+  )
+
+ggplot(Maybach, aes(MSRP)) +
+  geom_histogram(bins = 30, color = "white") +
+  facet_wrap(~Make, scales = "free_y") +
+  labs(
+    title = "Histogram of Market Price (MSRP) of Maybach"
+  )
+
+ggplot(Rolls, aes(MSRP)) +
+  geom_histogram(bins = 30, color = "white") +
+  facet_wrap(~Make, scales = "free_y") +
+  labs(
+    title = "Histogram of Market Price (MSRP) of Rolls-Royce"
+  )
+ggplot(Suzuki, aes(MSRP)) +
+  geom_histogram(bins = 30, color = "white") +
+  facet_wrap(~Make, scales = "free_y") +
+  labs(
+    title = "Histogram of Market Price (MSRP) of Suzuki"
+  )
+ggplot(Oldsmobile, aes(MSRP)) +
+  geom_histogram(bins = 30, color = "white") +
+  facet_wrap(~Make, scales = "free_y") +
+  labs(
+    title = "Histogram of Market Price (MSRP) of Oldsmobile"
+  )
+ggplot(Plymouth, aes(MSRP)) +
+  geom_histogram(bins = 30, color = "white") +
+  facet_wrap(~Make, scales = "free_y") +
+  labs(
+    title = "Histogram of Market Price (MSRP) of Plymouth"
+  )
+```
+
+
+We can see from the graph that different car brand have a different distribution of the price. 
+Top 3
+
+There are only three data within the Bugatti data set which is a really small data set that spread nearly from 15000000 to a little bit smaller than 21000000.
+The are few data within Maybach data set which contains more data than Bugatti. Majority of the data clustered below than 600000 while 2 of them is higer than 12000000.
+There are more data set in Rolls-Royce which scattered across a wide range of the price  from 2000000 to 500000
+
+Last 3
+
+There are reasonable good amount of the data in Suzuki, most of the car price is above 10000 while few data set is a bit above then 0
+For oldsmobile, most of the data is below than 50000. The rest of the data scattered from 20000 to 40000
+For Plymouth, most of the data is below than 5000 and the data is scatter from 10000 to 40000
+
+
+I skipped the part to analysis the model since there are too many model within the data set and the brand is enough generalization for the Car data
+
+
+## Lets move to the transmission type
+Visualize how many transmission type in each car brand
+
+```{r}
+median_car_make <- cars2 %>%
+  group_by(make) %>% 
+  count() %>% 
+  ungroup() %>% 
+  # summarize the median
+  summarize(median = median(n))
+
+cars2 %>% 
+  group_by(transmission_type, make) %>% 
+  count() %>% 
+  ggplot(aes(fct_reorder(make, n), n, fill = transmission_type)) +
+  geom_col() + 
+  coord_flip() +
+  geom_hline(yintercept=median_car_make$median, linetype="dashed", 
+             color = "red") +
+  labs(
+    title = "Number of Transmission Type sorted with different Car brand",
+    subtitle = "Red line represents median number",
+    x = "Car brand name",
+    y = "Number of the cars"
+  )
+```
+
+
+We can see from the graph that across different brand of the cars, it is either the manual or automatic. The automated manual is quite common in some brand like Volkswangen but there are rarely data is the direct drive
+
+
+Lets move on to the relation between the transmission type and msrp
+
+```{r}
+ggplot(cars2, aes(reorder(transmission_type, msrp), msrp)) +
+  geom_boxplot(varwidth = TRUE) + 
+  coord_flip() +
+  labs(
+    title = "MSRP of the Car by the Transmission Type",
+    x = "Transmission Type"
+  )
+```
+
+
+We can see from the graph that the automated manual yield the highest msrp while the automatic come to the second, the manual come to the third, and the direct drive come to the last. However, the mean of the msrp of all the transmission type is all below than 250000
+
+
+## Then lets move on to the driven wheels
+Visualize how many driven wheels in each car brand
+
+```{r}
+cars2 %>% 
+  group_by(driven_wheels, make) %>% 
+  count() %>% 
+  ggplot(aes(fct_reorder(make, n), n, fill = driven_wheels)) +
+  geom_col() + 
+  coord_flip() +
+  geom_hline(yintercept=median_car_make$median, linetype="dashed", 
+             color = "red") +
+  labs(
+    title = "Type of driven wheels sorted with different Car brand",
+    subtitle = "Red line represents median number",
+    x = "Car brand name",
+    y = "Number of the cars"
+  )
+```
+
+
+We can see from the graph that different brands seems to have different amount of numbers in terms the type of driven wheels
+The car with more cars seems to have more diversity of type of driven wheels
+There are more amount of rear wheel drive and front wheel drive than all wheel drive and four wheel drive
+
+Lets move on to the relation between the driven wheels and msrp
+
+```{r}
+ggplot(cars2, aes(reorder(driven_wheels, msrp), msrp)) +
+  geom_boxplot(varwidth = TRUE) + 
+  coord_flip() +
+  labs(
+    title = "MSRP of the Car by the Driven Wheels",
+    x = "Driven_Wheels"
+  )
+```
+
+
+The all wheel drive seems to have a highest msrp then it is the rear wheel drive, then it is the four wheel drive while the front wheel drive have the lowest msrp. However, the mean of the msrp of all the transmission type is all below than 250000
+
+
+We skip the visualize about how many market category in each car brand since there are too many category and will result to the graph is too big to fit in
+
+
+So we just use the box plot to show the relation between the market category and the msrp
+
+```{r}
+ggplot(cars2, aes(reorder(market_category, msrp), msrp)) +
+  geom_boxplot(varwidth = TRUE) + 
+  coord_flip() +
+  labs(
+    title = "MSRP of the Car by the Market Category",
+    x = "Market category"
+  )
+```
+
+
+The exotic, high-performace have the highest msrp then it is the exotic, luxury, performace while the hatchback, factory tuner, lucury perormance come to the last. However, the mean of the msrp of all the transmission type is all below than 250000
+
+
+## So we then move on to the Vehicle Style
+
+Visualize how many vehicle style to each car brand
+
+```{r}
+cars2 %>% 
+  group_by(vehicle_style, make) %>% 
+  count() %>% 
+  ggplot(aes(fct_reorder(make, n), n, fill = vehicle_style)) +
+  geom_col() + 
+  coord_flip() +
+  geom_hline(yintercept=median_car_make$median, linetype="dashed", 
+             color = "red") +
+  labs(
+    title = "Number of Vehicle Style sorted with different Car brand",
+    subtitle = "Red line represents median number",
+    x = "Car brand name",
+    y = "Number of the cars"
+  )
+```
+
+
+It seems like all the brand tends to produce different kind of style of cars despite some brand seems to only produce one of the style of the vehicle while the car company who produce more cars tends to produce more kinds of style vehicle.
+
+Then its the visualization of the MSRP with different style of the vehicle
+
+```{r}
+ggplot(cars2, aes(reorder(vehicle_style, msrp), msrp)) +
+  geom_boxplot(varwidth = TRUE) + 
+  coord_flip() +
+  labs(
+    title = "MSRP of the Car by the style of the car",
+    x = "Vehicle Style"
+  )
+```
+
+
+We can see from the graph that the crew cab pickup, passenger van, passenger minivan, wagon, extended cab pickup, 4 dr hatchback ,cargo minivan, convertible suv, 2dr hatchback, regular cab pickup, cargo van, 2dr suv have the msrp and mean all below to the 250000 while the sedan, 4 dr suv have the higher msrp compared to the previous group the sedan have a wide variable of price below 500000, the coupe and convertible have the higer msrp, most of the data fell in to the group lower than 750000 while there are some outlier over than 15000000
+
+
+# Then lets move on to the correlation between every numeric elements other than msrp sorted by vehicle style
+
+## The first element is year
+So here is the visualization of the relation between year and msrp sorted with vehicle style
+
+```{r}
+cars2 %>% 
+  ggplot(aes(year, msrp)) +
+  geom_point(alpha = 0.1) +
+  stat_summary(fun=mean, colour="red", geom="line", size = 3)+
+  facet_wrap(~vehicle_style, scales = "free") +
+  labs(
+    title = "Year of the car vs. MSRP by Vehicle Style"
+  )
+```
+
+
+It seems to have a positive relationship between the year and MSRP in all the Vehicle Style
+The msrp will increase when it is more latest year
+
+
+## The second element is engine horse power
+So here is the visualization of the relation between engine horse power and msrp sorted with vehicle style
+
+```{r}
+cars2 %>% 
+  ggplot(aes(engine_hp, msrp)) +
+  geom_point(alpha = 0.1) +
+  stat_summary(fun=mean, colour="red", geom="line", size = 3)+
+  facet_wrap(~vehicle_style, scales = "free") +
+  labs(
+    title = "Engine Horse Power vs. MSRP by Vehicle Style"
+  )
+```
+
+
+It seems to have a positive relationship between the Engine Horse Power and MSRP in most Vehicle Style
+In the 2dr suv there is a tendency to decrease until the horse power above than 250
+In the sedan there is a tendency to decrease after the horse power is above than 600
+
+## The third element is engine cylinders
+So here is the visualization of the relation between engine cylinders and msrp sorted with vehicle style
+
+```{r}
+cars2 %>% 
+  ggplot(aes(engine_cylinders, msrp)) +
+  geom_point(alpha = 0.1) +
+  stat_summary(fun=mean, colour="red", geom="line", size = 3)+
+  facet_wrap(~vehicle_style, scales = "free") +
+  labs(
+    title = "Number of the Engine Cylinders vs. MSRP by Vehicle Style"
+  )
+```
+
+
+It seems to have a positive relationship between the number of the engine cylinders and MSRP in most of the Vehicle Style
+The msrp will increase when it is more cylinder in most cases
+However, in the 2 dr suv have the negative relationship between the number of the engine cylinders and msrp
+convertible suv, regular cab pickup, and wagon have a little bit tendency of decrease in the end after the cylinders is over than 6
+
+# Number of doors
+
+I didn't include number of doors in this correlation since the information about how many number of door is already included in the Vehicle and since in the information of vehicle style it contains the information of the number of the doors which means there won't be a clear tendency towards the curve.
+
+We have analysed both the numerical data and the non-numerical data in the previous section and we get the information about the relationship between both numerical, non-numerical data with the msrp.
+So that's the end of the Exploratory data analysis and we can move on to the model building.
+
+
+# Model Building
+
+## Train/Test Split
+
+Before we do any model building, we have to perform a training / testing split on our data. I decided to go with 80/20 for this data because the testing data set will still have a significant amount of observations, but our model has more to train on and learn. The reason we do this is because we want to avoid over-fitting, so the testing set is reserved as this untouchable golden data set that can only be fit once to deem how accurate our model truly is. We also set a random seed to ensure the training / testing split is the same set every time we go back and work on the following code. 
+
+```{r}
+set.seed(3435) # setting a seed 
+
+cars1_split <- cars1 %>% 
+  initial_split(prop = 0.8, strata = "msrp")
+
+cars1_train <- training(cars1_split) # training split
+cars1_test <- testing(cars1_split) # testing split
+```
+
+Find the dimension of the training data
+
+```{r}
+dim(cars1_train)
+```
+
+
+Find the dimension of the testing data
+
+```{r}
+dim(cars1_test)
+```
+
+
+There are 9436 observations in the training data set and 2360 observations in the testing data set which are all efficient for model building
+
+Fold the training data into 10 folds with 1 repeats
+
+```{r}
+cars_folds <- vfold_cv(cars1_train, v = 10, repeats = 1)
+```
+
+Building the recipe
+
+```{r}
+car_recipe <- recipe(msrp ~  
+                       make +
+                       model +
+                       year +
+                       engine_hp+
+                       engine_cylinders+
+                       number_of_doors+
+  market_category_Crossover +
+  market_category_Diesel + 
+  market_category_Exotic +
+  market_category_Luxury +
+  market_category_Factory_Tuner +
+  market_category_High_Performance +
+  market_category_Performance +
+  market_category_Flex_Fuel +
+  market_category_Hatchback +
+  market_category_Hybrid +
+  driven_wheels_AWD +
+  driven_wheels_FWD +
+  driven_wheels_RWD +
+  driven_wheels_FoWD +
+  Transmission_Automated_Manual +
+  Transmission_Automatic +
+  Transmission_Direct_Drive +
+  Transmission_Manual +
+  vehicle_style_Coupe +
+  vehicle_style_Convertible +
+  vehicle_style_Sedan +
+  vehicle_style_Wagon +
+  vehicle_style_4dr_Hatchback +
+  vehicle_style_2dr_Hatchback +
+  vehicle_style_2dr_SUV +
+  vehicle_style_4dr_SUV +
+  vehicle_style_Cargo_Minivan +
+  vehicle_style_Cargo_Van +
+  vehicle_style_Convertible_SUV +
+  vehicle_style_Crew_Cab_Pickup +
+  vehicle_style_Extended_Cab_Pickup +
+  vehicle_style_Passenger_Minivan +
+  vehicle_style_Passenger_Van +
+  vehicle_style_Regular_Cab_Pickup, data = cars1_train) %>% 
+  #set up the recipe with all the factor
+  #filter out the make that don't have more than 50 data set
+  step_other(make, threshold = 50) %>% 
+  # filter out the model that don't have more than 100 data set
+  step_other(model, threshold = 100) %>% 
+  #step dummy variable
+  step_dummy(make,model,
+  market_category_Crossover ,
+  market_category_Diesel , 
+  market_category_Exotic ,
+  market_category_Luxury ,
+  market_category_Factory_Tuner ,
+  market_category_High_Performance ,
+  market_category_Performance ,
+  market_category_Flex_Fuel ,
+  market_category_Hatchback ,
+  market_category_Hybrid ,
+  driven_wheels_AWD ,
+  driven_wheels_FWD ,
+  driven_wheels_RWD ,
+  driven_wheels_FoWD ,
+  Transmission_Automated_Manual ,
+  Transmission_Automatic ,
+  Transmission_Direct_Drive ,
+  Transmission_Manual ,
+  vehicle_style_Coupe ,
+  vehicle_style_Convertible ,
+  vehicle_style_Sedan ,
+  vehicle_style_Wagon ,
+  vehicle_style_4dr_Hatchback ,
+  vehicle_style_2dr_Hatchback ,
+  vehicle_style_2dr_SUV ,
+  vehicle_style_4dr_SUV ,
+  vehicle_style_Cargo_Minivan ,
+  vehicle_style_Cargo_Van ,
+  vehicle_style_Convertible_SUV ,
+  vehicle_style_Crew_Cab_Pickup ,
+  vehicle_style_Extended_Cab_Pickup ,
+  vehicle_style_Passenger_Minivan ,
+  vehicle_style_Passenger_Van ,
+  vehicle_style_Regular_Cab_Pickup) %>% 
+  # scale and center all the predictors
+  step_normalize(all_predictors())
+```
+
+
+Save the recipe, the training set, and folds to the file
+
+```{r}
+save(cars_folds, car_recipe, cars1_train, file = "/Users/lhz/Desktop/---/PSTAT_131_Final_Project/R_Script/model_setup.rda")
+```
+
+# Start to running the models
+After consulting Prof. Coburn, I decided to run cross fold validation on the following four models due to the large number of categorical variable in my data set.
+-Random Forest Model
+-Boosted Model
+-Nearest Neighbors Model
+-Lasso Regression Model
+
+
+# Random Forest model
+
+In this model I tuned min_n, mtry, and trees. I also set the model to "regression" since my outcome is msrp which is a numeric variable and use the ranger engine then I stored this model and the receipt in the workflow
+
+```{r}
+random_forest_model <- rand_forest(
+              min_n = tune(),
+              mtry = tune(),
+              trees = tune(),
+              mode = "regression") %>% 
+  set_engine("ranger")
+
+random_forest_workflow <- workflow() %>% 
+  add_model(random_forest_model) %>% 
+  add_recipe(car_recipe)
+```
+
+
+Set up the tuning grid. I set up the levels to be 8, mtry to be 2-20, and trees to be 10-200 after consulting with Professor Coburn
+
+```{r}
+# set-up tuning grid
+rf_params <- parameters(random_forest_model) %>% 
+  update(mtry = mtry(range= c(2, 20)),
+         trees=trees(range=c(10,200)))
+
+#define grid
+random_forest_grid <- grid_regular(rf_params, levels = 8)
+```
+
+Setting up the random forest model
+```{r}
+random_forest_tune <- tune_grid(
+  random_forest_workflow, 
+  resamples = cars_folds, 
+  grid = random_forest_grid
+)
+
+# save the results and the workflow
+
+save(random_forest_tune, random_forest_workflow,  file = "/Users/lhz/Desktop/---/PSTAT_131_Final_Project/R_Script/random_forest_tune.rda")
+```
+
+
+# Boosted Model
+Set up the model with tuning parameters min_n, mtry, and learn_rate. I also set the engine as xgboost and then create the workflow
+
+```{r}
+boosted_model <- boost_tree(mode = "regression",
+                       min_n = tune(),
+                       mtry = tune(),
+                       learn_rate = tune()) %>% 
+  set_engine("xgboost")
+
+boosted_workflow <- workflow() %>% 
+  add_model(boosted_model) %>% 
+  add_recipe(car_recipe)
+```
+
+Setting up the grid and sue the range from 2-20 and learn rate from -5-0.1 with levels 5 after consulting the professor
+
+```{r}
+# set-up tuning grid
+boosted_params <- parameters(boosted_model) %>% 
+  update(mtry = mtry(range= c(2, 20)),
+         learn_rate = learn_rate(range = c(-5, 0.1))
+  )
+
+# define grid
+boosted_grid <- grid_regular(boosted_params, levels = 5)
+```
+
+
+```{r}
+boosted_tune <- boosted_workflow %>% 
+  tune_grid(
+    resamples = cars_folds, 
+    grid = boosted_grid
+    )
+
+# save the results and the workflow
+save(boosted_tune, boosted_workflow, file = "/Users/lhz/Desktop/---/PSTAT_131_Final_Project/R_Script/boosted_tune.rda")
+```
+
+
+# Lasso Regression
+Set up the model with tuning parameters penalty, mixture = 1. I also set the engine as glmnet and then create the workflow
+
+```{r}
+lasso_spec <- 
+  linear_reg(penalty = tune(), mixture = 1) %>% 
+  set_mode("regression") %>% 
+  set_engine("glmnet") 
+
+lasso_workflow <- workflow() %>% 
+  add_recipe(car_recipe) %>% 
+  add_model(lasso_spec)
+```
+
+Setting up the penalty_grid with penalty range 2-4 with levels = 50 after consult the professor
+
+```{r}
+penalty_grid <- grid_regular(penalty(range = c(2, 4)), levels = 50)
+```
+
+```{r}
+tune_res <- tune_grid(
+  lasso_workflow,
+  resamples = cars_folds, 
+  grid = penalty_grid
+)
+
+# save the results and the workflow
+save(tune_res, lasso_workflow, file = "/Users/lhz/Desktop/---/PSTAT_131_Final_Project/R_Script/lasso_regression.rda")
+```
+
+
+# Nearest Neighbors
+Lastly is the cross fold validation on the nearest neighbor model. I tuned the neighbors, set the engine to be kknn while keep the rest as default
+
+```{r}
+kknn_model <- 
+  nearest_neighbor(
+    neighbors = tune(),
+    mode = "regression") %>% 
+  set_engine("kknn")
+
+kknn_workflow <- workflow() %>% 
+  add_model(kknn_model) %>% 
+  add_recipe(car_recipe)
+```
+
+Set up the tuning grid and defined it
+
+```{r}
+# set-up tuning grid
+kknn_params <- parameters(kknn_model)
+# define grid
+kknn_grid <- grid_regular(kknn_params, levels = 2)
+```
+
+```{r}
+kknn_tune <- kknn_workflow %>% 
+  tune_grid(
+    resamples = cars_folds, 
+            grid = kknn_grid)
+
+# save the results and the workflow
+save(kknn_tune, kknn_workflow, file = "/Users/lhz/Desktop/---/PSTAT_131_Final_Project/R_Script/nearest_tune.rda")
+```
+
+
+# Result of the model
+## Model Auto plot
+
+Random Forest Model Plot
+Load the model and then use the autoplot to check the performance
+
+```{r}
+load("/Users/lhz/Desktop/---/PSTAT_131_Final_Project/R_Script/random_forest_tune.rda")
+autoplot(random_forest_tune)
+```
+
+
+We can see from the graph that the rmse decreases as the number of randomly selected predictors increases. This makes sense since more class data means more chances of correctly guessing the msrp.
+We can also see from the graph that the rsq increase while the randomly selected predictors increase while the trees 145 makes the best outcome and trees 10 made the worst outcome. But they all achieve the rsq over than 0.85 which seems like a good model.
+
+# Boosted Tree Model Plot
+Load the model and then use the autoplot to check the performance
+
+```{r}
+load("/Users/lhz/Desktop/---/PSTAT_131_Final_Project/R_Script/boosted_tune.rda")
+autoplot(boosted_tune)
+```
+
+
+We can see from the graph that with bigger learning rate minimal node size then to have a different rmse values but eventually it goes done to 20000 which is good consider the distribution of the data set is huge.
+We can see from the rsq that the node size 2 tends to work the test and node 40 tend to work the worst but they all achive a relatively high rsq which is over 0.75 which supposed to be good enough.
+
+# Lasso Regression Model Plot
+Load the model and then use the autoplot to check the performance
+
+```{r}
+load("/Users/lhz/Desktop/---/PSTAT_131_Final_Project/R_Script/lasso_regression.rda")
+autoplot(tune_res)
+```
+
+
+We can see from the graph that with bigger amount of regularization the rmse tend to increase to over then 39000 and the rsq tends to decrease which makes sense.
+
+
+# Nearest Neighbors Model Plot
+Load the model and then use the autoplot to check the performance
+
+```{r}
+load( "/Users/lhz/Desktop/---/PSTAT_131_Final_Project/R_Script/nearest_tune.rda")
+autoplot(kknn_tune, metric = "rmse")
+```
+
+
+We can see from the graph that with the bigger nearest neighbors the rmse will increase
+
+Using the show best function to discover the four models
+
+```{r}
+show_best(random_forest_tune, metric = "rmse") %>% select(-.estimator, -.config)
+show_best(boosted_tune, metric = "rmse") %>% select(-.estimator, -.config)
+show_best(tune_res, metric = "rmse") %>% select(-.estimator, -.config)
+show_best(kknn_tune, metric = "rmse") %>% select(-.estimator, -.config)
+mean(cars1$msrp)
+```
+
+
+In the random forest tree model, the smallest mean is 17369.70 with mtry = 20 and min_n = 2.
+This is pretty good since the mean of the msrp is 40614.79
+In the boosted tree model, the smallest mean is 19905.18 with learning rate is 1.258925, mtry = 20, and the min_n = 2. This is larger than random forest but it is still good model since the mean of the msrp is way bigger
+In the Lasso Regression Model, the mean is 36179.98 with penalty = 212.9051  which is way bigger than the previous model but it is still decent since it is still smaller than the mean of the msrp
+In the nearest neighbor model, the smallest mean is 20101.33 with the number of neighbors is 1 which match the graph.
+But in general the random forest tree model have the best performance with the smallest mean
+
+
+# Final Model Building
+
+We create a workflow that has tuned in the name and finalize the workflow by taking the parameters from the best model which is the random forest tree model using the select_best() function
+
+```{r}
+random_forest_workflow_tuned <- random_forest_workflow %>% 
+  finalize_workflow(select_best(random_forest_tune, metric = "rmse"))
+random_forest_results <- fit(random_forest_workflow_tuned, cars1_train)
+```
+
+
+# Analysis of The Test Set
+
+Fit the testing data set and start the analysis
+
+```{r}
+car_metric <- metric_set(rmse)
+
+model_test_predictions <- predict(random_forest_results, new_data = cars1_test) %>% 
+  bind_cols(cars1_test %>% select(msrp)) 
+
+model_test_predictions_type <- predict(random_forest_results, new_data = cars1_test) %>% 
+  bind_cols(cars1_test %>% select(msrp, make)) 
+
+model_test_predictions %>% 
+  car_metric(truth = msrp, estimate = .pred)
+```
+
+
+The model returned an rmse of 6934.484 on our testing data which is smaller than the rmse on the training data which mean there is not overfitting to the training
+
+I examined a scatter plot of predicted difficulties versus actual difficulties, filtering the data to only show the make of the car where the difference between the predicted and actual value was 13968.97 (double the rmse value)
+
+```{r}
+model_test_predictions_type %>% 
+  mutate(difference = msrp-.pred,
+         difference = abs(difference)) %>% 
+  filter(difference >= 6984.484*2) %>% 
+ggplot(aes(x = msrp, y = .pred)) + 
+  # Create a diagonal line:
+  geom_abline(lty = 2) + 
+  geom_point(alpha = 1) + 
+  # Scale and size the x- and y-axis uniformly:
+  coord_obs_pred() +
+  facet_wrap(~make) +
+  labs(
+    title = "Test Data Set Predictions vs. Actual",
+    subtitle = "Greater Than 6984.484*2 Difference",
+    y = "Predicted Car Price",
+    x = "Car Price"
+  )
+model_test_predictions_type %>% 
+  mutate(difference = msrp-.pred,
+         difference = abs(difference)) %>% 
+  filter(difference >= 6984.484*2) %>% 
+  group_by(make) %>% 
+  count() %>% 
+  arrange(-n)
+```
+
+
+It turns out most of the signature make is Aston Martin, Bentley, Maserati, Lamborghini. 
+
+
+# Lets Check A Few Predictions
+
+## To examine what this rmse means for this data set, lets exam few random cars from the data set to see the difference
+
+
+1: BMW 1 Series 2011 MSRP: 40650
+
+```{r}
+qualifications_1 <- data.frame(
+  make = "BMW",
+  model = "1 Series", 
+  year = 2011,
+  engine_hp = 300,
+  engine_cylinders = 6,
+  number_of_doors = 2,
+  market_category_Crossover = FALSE,
+  market_category_Exotic = FALSE,
+    market_category_Diesel = FALSE,
+    market_category_Luxury = TRUE,
+    market_category_Factory_Tuner = FALSE,
+    market_category_High_Performance = FALSE,
+    market_category_Performance = TRUE,
+    market_category_Flex_Fuel = FALSE,
+    market_category_Hatchback = FALSE,
+    market_category_Hybrid = FALSE,
+    driven_wheels_AWD = FALSE,
+    driven_wheels_FWD = FALSE,
+    driven_wheels_RWD = TRUE,
+    driven_wheels_FoWD = FALSE,
+    Transmission_Automated_Manual = FALSE,
+    Transmission_Automatic = FALSE,
+    Transmission_Direct_Drive = FALSE,
+    Transmission_Manual = TRUE,
+    vehicle_style_Coupe = FALSE,
+    vehicle_style_Convertible = TRUE,
+    vehicle_style_Sedan = FALSE,
+    vehicle_style_Wagon = FALSE,
+    vehicle_style_4dr_Hatchback = FALSE,
+  vehicle_style_2dr_Hatchback = FALSE,
+    vehicle_style_2dr_SUV = FALSE,
+    vehicle_style_4dr_SUV = FALSE,
+    vehicle_style_Cargo_Minivan = FALSE,
+  vehicle_style_Cargo_Van = FALSE,
+  vehicle_style_Convertible_SUV = FALSE,
+  vehicle_style_Crew_Cab_Pickup = FALSE,
+  vehicle_style_Extended_Cab_Pickup = FALSE,
+  vehicle_style_Passenger_Minivan = FALSE,
+  vehicle_style_Passenger_Van = FALSE,
+  vehicle_style_Regular_Cab_Pickup = FALSE) %>% 
+mutate(
+  market_category_Crossover = factor(market_category_Crossover),
+  market_category_Exotic = factor(market_category_Exotic),
+  market_category_Diesel = factor(market_category_Diesel),
+  market_category_Luxury = factor(market_category_Luxury),
+  market_category_Factory_Tuner = factor(market_category_Factory_Tuner),
+  market_category_High_Performance = factor(market_category_High_Performance),
+  market_category_Performance = factor(market_category_Performance),
+  market_category_Flex_Fuel = factor(market_category_Flex_Fuel),
+  market_category_Hatchback = factor(market_category_Hatchback),
+  market_category_Hybrid = factor(market_category_Hybrid),
+  driven_wheels_AWD = factor(driven_wheels_AWD),
+  driven_wheels_FWD = factor(driven_wheels_FWD),
+  driven_wheels_RWD = factor(driven_wheels_RWD),
+  driven_wheels_FoWD = factor(driven_wheels_FoWD),
+  Transmission_Automated_Manual = factor(Transmission_Automated_Manual),
+  Transmission_Automatic = factor(Transmission_Automatic),
+  Transmission_Direct_Drive = factor(Transmission_Direct_Drive),
+  Transmission_Manual = factor(Transmission_Manual),
+  vehicle_style_Coupe = factor(vehicle_style_Coupe),
+  vehicle_style_Convertible = factor(vehicle_style_Convertible),
+  vehicle_style_Sedan = factor(vehicle_style_Sedan),
+  vehicle_style_Wagon = factor(vehicle_style_Wagon),
+  vehicle_style_4dr_Hatchback = factor(vehicle_style_4dr_Hatchback),
+  vehicle_style_2dr_Hatchback = factor(vehicle_style_2dr_Hatchback),
+  vehicle_style_2dr_SUV = factor(vehicle_style_2dr_SUV),
+  vehicle_style_4dr_SUV = factor(vehicle_style_4dr_SUV),
+  vehicle_style_Cargo_Minivan = factor(vehicle_style_Cargo_Minivan),
+  vehicle_style_Cargo_Van = factor(vehicle_style_Cargo_Van),
+  vehicle_style_Convertible_SUV = factor(vehicle_style_Convertible_SUV),
+  vehicle_style_Crew_Cab_Pickup = factor(vehicle_style_Crew_Cab_Pickup),
+  vehicle_style_Extended_Cab_Pickup = factor(vehicle_style_Extended_Cab_Pickup),
+  vehicle_style_Passenger_Minivan = factor(vehicle_style_Passenger_Minivan),
+  vehicle_style_Passenger_Van = factor(vehicle_style_Passenger_Van),
+  vehicle_style_Regular_Cab_Pickup = factor(vehicle_style_Regular_Cab_Pickup))
+  
+predict(random_forest_results, qualifications_1)
+```
+
+The actual price from the data base is 40650 which is 4835.54 higher than the actual price which is not too bad considering the data set is huge.
+
+
+2: Aston Martin DB 9 2013 MSRP=198700
+
+```{r}
+qualifications_2 <- data.frame(
+  make = "Aston Martin",
+  model = "DB9", 
+  year = 2013,
+  engine_hp = 510,
+  engine_cylinders = 12,
+  number_of_doors = 2,
+  market_category_Crossover = FALSE,
+  market_category_Exotic = TRUE,
+    market_category_Diesel = FALSE,
+    market_category_Luxury = FALSE,
+    market_category_Factory_Tuner = FALSE,
+    market_category_High_Performance = TRUE,
+    market_category_Performance = TRUE,
+    market_category_Flex_Fuel = FALSE,
+    market_category_Hatchback = FALSE,
+    market_category_Hybrid = FALSE,
+    driven_wheels_AWD = FALSE,
+    driven_wheels_FWD = FALSE,
+    driven_wheels_RWD = TRUE,
+    driven_wheels_FoWD = FALSE,
+    Transmission_Automated_Manual = FALSE,
+    Transmission_Automatic = TRUE,
+    Transmission_Direct_Drive = FALSE,
+    Transmission_Manual = FALSE,
+    vehicle_style_Coupe = FALSE,
+    vehicle_style_Convertible = TRUE,
+    vehicle_style_Sedan = FALSE,
+    vehicle_style_Wagon = FALSE,
+    vehicle_style_4dr_Hatchback = FALSE,
+  vehicle_style_2dr_Hatchback = FALSE,
+    vehicle_style_2dr_SUV = FALSE,
+    vehicle_style_4dr_SUV = FALSE,
+    vehicle_style_Cargo_Minivan = FALSE,
+  vehicle_style_Cargo_Van = FALSE,
+  vehicle_style_Convertible_SUV = FALSE,
+  vehicle_style_Crew_Cab_Pickup = FALSE,
+  vehicle_style_Extended_Cab_Pickup = FALSE,
+  vehicle_style_Passenger_Minivan = FALSE,
+  vehicle_style_Passenger_Van = FALSE,
+  vehicle_style_Regular_Cab_Pickup = FALSE) %>% 
+mutate(
+  market_category_Crossover = factor(market_category_Crossover),
+  market_category_Exotic = factor(market_category_Exotic),
+  market_category_Diesel = factor(market_category_Diesel),
+  market_category_Luxury = factor(market_category_Luxury),
+  market_category_Factory_Tuner = factor(market_category_Factory_Tuner),
+  market_category_High_Performance = factor(market_category_High_Performance),
+  market_category_Performance = factor(market_category_Performance),
+  market_category_Flex_Fuel = factor(market_category_Flex_Fuel),
+  market_category_Hatchback = factor(market_category_Hatchback),
+  market_category_Hybrid = factor(market_category_Hybrid),
+  driven_wheels_AWD = factor(driven_wheels_AWD),
+  driven_wheels_FWD = factor(driven_wheels_FWD),
+  driven_wheels_RWD = factor(driven_wheels_RWD),
+  driven_wheels_FoWD = factor(driven_wheels_FoWD),
+  Transmission_Automated_Manual = factor(Transmission_Automated_Manual),
+  Transmission_Automatic = factor(Transmission_Automatic),
+  Transmission_Direct_Drive = factor(Transmission_Direct_Drive),
+  Transmission_Manual = factor(Transmission_Manual),
+  vehicle_style_Coupe = factor(vehicle_style_Coupe),
+  vehicle_style_Convertible = factor(vehicle_style_Convertible),
+  vehicle_style_Sedan = factor(vehicle_style_Sedan),
+  vehicle_style_Wagon = factor(vehicle_style_Wagon),
+  vehicle_style_4dr_Hatchback = factor(vehicle_style_4dr_Hatchback),
+  vehicle_style_2dr_Hatchback = factor(vehicle_style_2dr_Hatchback),
+  vehicle_style_2dr_SUV = factor(vehicle_style_2dr_SUV),
+  vehicle_style_4dr_SUV = factor(vehicle_style_4dr_SUV),
+  vehicle_style_Cargo_Minivan = factor(vehicle_style_Cargo_Minivan),
+  vehicle_style_Cargo_Van = factor(vehicle_style_Cargo_Van),
+  vehicle_style_Convertible_SUV = factor(vehicle_style_Convertible_SUV),
+  vehicle_style_Crew_Cab_Pickup = factor(vehicle_style_Crew_Cab_Pickup),
+  vehicle_style_Extended_Cab_Pickup = factor(vehicle_style_Extended_Cab_Pickup),
+  vehicle_style_Passenger_Minivan = factor(vehicle_style_Passenger_Minivan),
+  vehicle_style_Passenger_Van = factor(vehicle_style_Passenger_Van),
+  vehicle_style_Regular_Cab_Pickup = factor(vehicle_style_Regular_Cab_Pickup))
+  
+predict(random_forest_results, qualifications_2)
+```
+
+
+The actual price from the data base is 198700 which is 28771.6 (14.4%) higer than the actual price which is not too bad considering the data set is huge.
+
+3. Bentley Arnage 2007 MSRP=2211990
+```{r}
+qualifications_3 <- data.frame(
+  make = "Bentley",
+  model = "Arnage", 
+  year = 2007,
+  engine_hp = 450,
+  engine_cylinders = 8,
+  number_of_doors = 4,
+  market_category_Crossover = FALSE,
+  market_category_Exotic = TRUE,
+    market_category_Diesel = FALSE,
+    market_category_Luxury = TRUE,
+    market_category_Factory_Tuner = FALSE,
+    market_category_High_Performance = FALSE,
+    market_category_Performance = TRUE,
+    market_category_Flex_Fuel = FALSE,
+    market_category_Hatchback = FALSE,
+    market_category_Hybrid = FALSE,
+    driven_wheels_AWD = FALSE,
+    driven_wheels_FWD = FALSE,
+    driven_wheels_RWD = TRUE,
+    driven_wheels_FoWD = FALSE,
+    Transmission_Automated_Manual = FALSE,
+    Transmission_Automatic = TRUE,
+    Transmission_Direct_Drive = FALSE,
+    Transmission_Manual = FALSE,
+    vehicle_style_Coupe = FALSE,
+    vehicle_style_Convertible = FALSE,
+    vehicle_style_Sedan = TRUE,
+    vehicle_style_Wagon = FALSE,
+    vehicle_style_4dr_Hatchback = FALSE,
+  vehicle_style_2dr_Hatchback = FALSE,
+    vehicle_style_2dr_SUV = FALSE,
+    vehicle_style_4dr_SUV = FALSE,
+    vehicle_style_Cargo_Minivan = FALSE,
+  vehicle_style_Cargo_Van = FALSE,
+  vehicle_style_Convertible_SUV = FALSE,
+  vehicle_style_Crew_Cab_Pickup = FALSE,
+  vehicle_style_Extended_Cab_Pickup = FALSE,
+  vehicle_style_Passenger_Minivan = FALSE,
+  vehicle_style_Passenger_Van = FALSE,
+  vehicle_style_Regular_Cab_Pickup = FALSE) %>% 
+mutate(
+  market_category_Crossover = factor(market_category_Crossover),
+  market_category_Exotic = factor(market_category_Exotic),
+  market_category_Diesel = factor(market_category_Diesel),
+  market_category_Luxury = factor(market_category_Luxury),
+  market_category_Factory_Tuner = factor(market_category_Factory_Tuner),
+  market_category_High_Performance = factor(market_category_High_Performance),
+  market_category_Performance = factor(market_category_Performance),
+  market_category_Flex_Fuel = factor(market_category_Flex_Fuel),
+  market_category_Hatchback = factor(market_category_Hatchback),
+  market_category_Hybrid = factor(market_category_Hybrid),
+  driven_wheels_AWD = factor(driven_wheels_AWD),
+  driven_wheels_FWD = factor(driven_wheels_FWD),
+  driven_wheels_RWD = factor(driven_wheels_RWD),
+  driven_wheels_FoWD = factor(driven_wheels_FoWD),
+  Transmission_Automated_Manual = factor(Transmission_Automated_Manual),
+  Transmission_Automatic = factor(Transmission_Automatic),
+  Transmission_Direct_Drive = factor(Transmission_Direct_Drive),
+  Transmission_Manual = factor(Transmission_Manual),
+  vehicle_style_Coupe = factor(vehicle_style_Coupe),
+  vehicle_style_Convertible = factor(vehicle_style_Convertible),
+  vehicle_style_Sedan = factor(vehicle_style_Sedan),
+  vehicle_style_Wagon = factor(vehicle_style_Wagon),
+  vehicle_style_4dr_Hatchback = factor(vehicle_style_4dr_Hatchback),
+  vehicle_style_2dr_Hatchback = factor(vehicle_style_2dr_Hatchback),
+  vehicle_style_2dr_SUV = factor(vehicle_style_2dr_SUV),
+  vehicle_style_4dr_SUV = factor(vehicle_style_4dr_SUV),
+  vehicle_style_Cargo_Minivan = factor(vehicle_style_Cargo_Minivan),
+  vehicle_style_Cargo_Van = factor(vehicle_style_Cargo_Van),
+  vehicle_style_Convertible_SUV = factor(vehicle_style_Convertible_SUV),
+  vehicle_style_Crew_Cab_Pickup = factor(vehicle_style_Crew_Cab_Pickup),
+  vehicle_style_Extended_Cab_Pickup = factor(vehicle_style_Extended_Cab_Pickup),
+  vehicle_style_Passenger_Minivan = factor(vehicle_style_Passenger_Minivan),
+  vehicle_style_Passenger_Van = factor(vehicle_style_Passenger_Van),
+  vehicle_style_Regular_Cab_Pickup = factor(vehicle_style_Regular_Cab_Pickup))
+  
+predict(random_forest_results, qualifications_3)
+```
+
+
+The actual price from the data base is 221990 which is 36944 (16.6%) higher than the actual price which is not too bad considering the data set is huge.
+
+
+# Conclusion
+After the research, testing, and analysis, the best model to predict the market price of the car is the random forest model but it is not actually perfect.
+
+As far as potential improvements, I think using other models like Naive Bayes or Support Vector Machines might give way to better results than the Random Forest Model did. However, after the testing of the models I have build, I still choose the Random Forest Model for my final models since how the random forest model uses the wisdom of crowds (according to the final project example). With each tree representing a sample from the data, the uncorrelated trees were able to protect themselves from making correlation between variables that were not actually correlated. While I thought my Boosted Tree Model may perform better but the RSEQ and the mean of the model is bigger then than Random Forest Model. Lasso Regression Model tries to find the coefficients that minimize the error sum of squares by applying a penalty to these coefficients but turns out the performance is not that optimal compared to the Random Forest Model. The Nearest Neighbors Model is uses feature similarity like model or make to predict the values of any new data point. However, from the result we can see that the less the predictor we use, the performance will be better which makes this model less preferable. Further research might based on the specific model of the cars instead of using the data set that kind of generalized the whole data set.
+
+Overall, the Car data set provided an effective way to distinguish the market price of the car based on a wide variety of variable type and features of the cars which could potentially help people to evaluate how much they should pay or expect on the car they sell or buy.
